@@ -1,4 +1,4 @@
-#include <stdio.h>
+/*#include <stdio.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -9,8 +9,62 @@
 #include <errno.h>
 #include <string.h>
 #include <stdint.h>
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <ifaddrs.h>
+#include <string.h>
+#include <malloc.h>
+#include <stdint.h>
+#include <errno.h>
+
+/*
+#include <ctype.h>
+#include <err.h>
+#include <stdint.h>
+#include <unistd.h>
+#include <assert.h>
+#include <netinet/in.h>
+#include <sys/fcntl.h>
+
+#include "net/ethernet.h"
+#include "net/if.h"
+#include "net/if_dl.h"
+#include "net/if_types.h"
+#include "net/route.h"
+
+#include "sys/queue.h"
+#include "sys/ioctl.h"
+#include "sys/socket.h"
+#include "sys/sysctl.h"
+*/
+
+#ifdef FSTACK
+#include "rte_config.h"
+#include "ff_ipc.h"
+#include "compat.h"
+#include "ff_config.h"
+#include "ff_api.h"
+#endif
 
 #define BUF_SIZE 1500
+
+
+
+
+// buffer for input/output binary packet
+uint8_t buffer[BUF_SIZE];
+struct sockaddr_in client_addr;
+socklen_t addr_len = sizeof(struct sockaddr_in);
+struct sockaddr_in addr;
+int nbytes, rc;
+int sock;
+int port = 9000;
+struct Message msg;
 
 /*
 * This software is licensed under the CC0.
@@ -550,7 +604,7 @@ void resolver_process(struct Message* msg)
     rr->class = q->qClass;
     rr->ttl = 60*60; // in seconds; 0 means no caching
 
-    printf("Query for '%s'\n", q->qName);
+    //printf("Query for '%s'\n", q->qName);
 
     // We only can only answer two question types so far
     // and the answer (resource records) will be all put
@@ -692,24 +746,58 @@ void free_questions(struct Question* qq)
   }
 }
 
-int main()
-{
-  // buffer for input/output binary packet
-  uint8_t buffer[BUF_SIZE];
-  struct sockaddr_in client_addr;
-  socklen_t addr_len = sizeof(struct sockaddr_in);
-  struct sockaddr_in addr;
-  int nbytes, rc;
-  int sock;
-  int port = 9000;
+void loopfunc(){
 
-  struct Message msg;
+#ifndef FSTACK
+  nbytes = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *) &client_addr, &addr_len);
+#else
+  nbytes = ff_recvfrom(sock, buffer, sizeof(buffer), 0,(struct sockaddr *) &client_addr, &addr_len);
+  if(nbytes <= 0) return;
+#endif
+
+  free_questions(msg.questions);
+  free_resource_records(msg.answers);
+  free_resource_records(msg.authorities);
+  free_resource_records(msg.additionals);
+  memset(&msg, 0, sizeof(struct Message));
+
+  if (decode_msg(&msg, buffer, nbytes) != 0) {
+    //continue;
+    return;
+  }
+
+  /* Print query */
+  //print_query(&msg);
+
+  resolver_process(&msg);
+
+  /* Print response */
+  //print_query(&msg);
+
+  uint8_t *p = buffer;
+  if (encode_msg(&msg, &p) != 0) {
+    //continue;
+    return;
+  }
+
+  int buflen = p - buffer;
+#ifndef FSTACK
+  sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
+#else
+  ff_sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
+#endif
+}
+
+int main(int argc, char** argv)
+{
   memset(&msg, 0, sizeof(struct Message));
 
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = INADDR_ANY;
   addr.sin_port = htons(port);
 
+#ifndef FSTACK
+//-----Linux socket-----//
   sock = socket(AF_INET, SOCK_DGRAM, 0);
 
   rc = bind(sock, (struct sockaddr*) &addr, addr_len);
@@ -720,36 +808,44 @@ int main()
     return 1;
   }
 
+#else
+//-----F-stack socket-----//
+  ff_init(argc, argv);
+  sock = ff_socket(AF_INET, SOCK_DGRAM, 0);
+
+  int flag;
+  
+  if((flag = ff_fcntl(sock, F_GETFL, 0)) < 0)
+  {
+    printf("fcntl error: %s\n", strerror(errno));
+    return 1;
+  }
+  
+  if(ff_fcntl(sock, F_SETFL, 4) < 0)
+  {
+    printf("fcntl error: %s\n", strerror(errno));
+    return 1;
+  }
+  
+  rc = ff_bind(sock, (struct sockaddr*) &addr, addr_len);
+  
+  if(rc != 0)
+  {
+    printf("Could not bind: %s\n", strerror(errno));
+    return 1;
+  }
+#endif
+
+
   printf("Listening on port %u.\n", port);
 
-  while (1)
-  {
-    free_questions(msg.questions);
-    free_resource_records(msg.answers);
-    free_resource_records(msg.authorities);
-    free_resource_records(msg.additionals);
-    memset(&msg, 0, sizeof(struct Message));
-
-    nbytes = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *) &client_addr, &addr_len);
-
-    if (decode_msg(&msg, buffer, nbytes) != 0) {
-      continue;
-    }
-
-    /* Print query */
-    print_query(&msg);
-
-    resolver_process(&msg);
-
-    /* Print response */
-    print_query(&msg);
-
-    uint8_t *p = buffer;
-    if (encode_msg(&msg, &p) != 0) {
-      continue;
-    }
-
-    int buflen = p - buffer;
-    sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
+#ifndef FSTACK
+//-----Linux socket-----//
+  while(1){
+    loopfunc();
   }
+#else
+//-----F-stack socket-----//
+  ff_run(loopfunc, NULL);
+#endif
 }

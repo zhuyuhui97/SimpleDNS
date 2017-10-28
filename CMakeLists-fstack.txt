@@ -1,0 +1,48 @@
+PROJECT(test)
+CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
+set(DPDK_BUILD_DIR "$ENV{FF_DPDK}")
+set(FSTACK_DIR "$ENV{FF_PATH}")
+set(CMAKE_C_FLAGS "-O -gdwarf-2")
+
+include_directories("${DPDK_BUILD_DIR}/include")
+link_directories("${DPDK_BUILD_DIR}/lib")
+
+include_directories("${FSTACK_DIR}/lib")
+link_directories("${FSTACK_DIR}/lib")
+
+include_directories("${FSTACK_DIR}/tools/compat")
+include_directories("${FSTACK_DIR}/tools/compat/include")
+link_directories("${FSTACK_DIR}/tools/compat")
+
+add_executable(sdns main.c)
+
+add_definitions(
+    -DINET
+    -D__BSD_VISIBLE
+    -DFSTACK
+    -DRTE_MACHINE_CPUFLAG_SSE
+    -DRTE_MACHINE_CPUFLAG_SSE2
+    -DRTE_MACHINE_CPUFLAG_SSE3
+    -DRTE_MACHINE_CPUFLAG_SSE4_1
+    -DRTE_MACHINE_CPUFLAG_SSE4_2
+    -DRTE_COMPILE_TIME_CPUFLAGS=RTE_CPUFLAG_SSE,RTE_CPUFLAG_SSE2,RTE_CPUFLAG_SSE3,RTE_CPUFLAG_SSSE3,RTE_CPUFLAG_SSE4_1,RTE_CPUFLAG_SSE4_2
+
+)
+  
+
+
+target_link_libraries(
+    sdns
+    -lfstack
+    -Wl,--whole-archive 
+    -lffcompat 
+    -Wl,--no-whole-archive
+    -Wl,--whole-archive 
+    -ldpdk
+    -Wl,--no-whole-archive 
+    -lrt 
+    -lm 
+    -ldl 
+    -lcrypto 
+    -pthread
+)
