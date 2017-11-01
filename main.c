@@ -21,7 +21,7 @@
 #include <malloc.h>
 #include <stdint.h>
 #include <errno.h>
-
+#include <fcntl.h>
 /*
 #include <ctype.h>
 #include <err.h>
@@ -751,6 +751,7 @@ void loopfunc(){
 #ifndef FSTACK
   nbytes = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *) &client_addr, &addr_len);
 #else
+loop_head:
   nbytes = ff_recvfrom(sock, buffer, sizeof(buffer), 0,(struct sockaddr *) &client_addr, &addr_len);
   if(nbytes <= 0) return;
 #endif
@@ -771,6 +772,7 @@ void loopfunc(){
 
   resolver_process(&msg);
 
+  //if ((msg.questions)->qName[0]=='p') exit(0);
   /* Print response */
   //print_query(&msg);
 
@@ -785,6 +787,7 @@ void loopfunc(){
   sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
 #else
   ff_sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
+  goto loop_head;
 #endif
 }
 
@@ -815,7 +818,7 @@ int main(int argc, char** argv)
 
   int flag;
   
-  if((flag = ff_fcntl(sock, F_GETFL, 0)) < 0)
+  /*if((flag = ff_fcntl(sock, F_GETFL, 0)) < 0)
   {
     printf("fcntl error: %s\n", strerror(errno));
     return 1;
@@ -826,7 +829,11 @@ int main(int argc, char** argv)
     printf("fcntl error: %s\n", strerror(errno));
     return 1;
   }
-  
+  */
+  int on = 1;
+	
+  ff_ioctl(sock, 0x5421, &on);
+
   rc = ff_bind(sock, (struct sockaddr*) &addr, addr_len);
   
   if(rc != 0)

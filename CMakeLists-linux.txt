@@ -1,4 +1,5 @@
 PROJECT(test)
 
+set(CMAKE_C_FLAGS "-pg")
 add_executable(sdns main.c)
 

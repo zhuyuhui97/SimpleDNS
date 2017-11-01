@@ -14,7 +14,9 @@ include_directories("${FSTACK_DIR}/tools/compat")
 include_directories("${FSTACK_DIR}/tools/compat/include")
 link_directories("${FSTACK_DIR}/tools/compat")
 
-add_executable(sdns main.c)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pg")
+
+add_executable(sdns-dpdk main.c)
 
 add_definitions(
     -DINET
@@ -32,7 +34,7 @@ add_definitions(
 
 
 target_link_libraries(
-    sdns
+    sdns-dpdk
     -lfstack
     -Wl,--whole-archive 
     -lffcompat 
